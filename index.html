@@ -79,8 +79,8 @@
     <label>Dataset</label>
     <div class="select-wrapper">
       <select id="datasetSelect">
-        <option value="power">Global Integrated Power </option>
-        <option value="steel">Global Iron & Steel </option>
+        <option value="power">Global Integrated Power</option>
+        <option value="steel">Global Iron &amp; Steel</option>
       </select>
     </div>
 
@@ -106,7 +106,7 @@
 /* ---------------- DATASETS ---------------- */
 const DATASETS={
   power:{
-    url:"https://open-energy-transition.github.io/global_energy_monitor_power_tracker/Global-Integrated-Power-February-2025-update-II.xlsx",
+    url:"https://raw.githubusercontent.com/myougotti/gem_per_country/main/Global-Integrated-Power-February-2025-update-II.xlsx",
     sheetIndex:1,
     process:rows=>rows.map(r=>({
       "Type":r["Type"],
@@ -120,7 +120,7 @@ const DATASETS={
     }))
   },
   steel:{
-    url:"https://raw.githubusercontent.com/open-energy-transition/gem_per_country/main/Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx",
+    url:"https://raw.githubusercontent.com/myougotti/gem_per_country/main/Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx",
     sheetIndex:[2,3],
     process:(s3,s4)=>{
       const map={}; s3.forEach(r=>map[r["Plant ID"]]={coord:r["Coordinates"],acc:r["Coordinate accuracy"],pow:r["Power source"]});
@@ -149,7 +149,9 @@ async function fetchAndProcessExcel(){
   statusEl.textContent="Loading dataset…";
   try{
     const key=datasetSelect.value, cfg=DATASETS[key];
-    const wb=XLSX.read(await (await fetch(cfg.url)).arrayBuffer(),{type:"array"});
+    const res=await fetch(cfg.url);
+    if(!res.ok) throw new Error(`could not download dataset (HTTP ${res.status})`);
+    const wb=XLSX.read(await res.arrayBuffer(),{type:"array"});
 
     sheetData = key==="power"
       ? cfg.process( XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[cfg.sheetIndex]],{defval:""}) )

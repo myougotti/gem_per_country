@@ -1,36 +1,64 @@
-name: Update Excel
+name: Update GEM data files
 
+# The GEM download URLs are version-pinned (e.g. "February-2025-update-II") and
+# the old ones now return HTTP 410 Gone, so a scheduled refresh is pointless.
+# Run this workflow manually, passing the download URLs of the new release as
+# inputs. If column names changed in the new release, index.html must be
+# updated to match.
 permissions:
   contents: write
 
 on:
-  schedule:
-    - cron: "0 0 * * *" 
   workflow_dispatch:
+    inputs:
+      power_url:
+        description: "URL of the Global Integrated Power xlsx"
+        required: true
+        default: "https://globalenergymonitor.org/wp-content/uploads/2025/02/Global-Integrated-Power-February-2025-update-II.xlsx"
+      steel_url:
+        description: "URL of the Global Iron and Steel Tracker plant-level xlsx"
+        required: true
+        default: "https://globalenergymonitor.org/wp-content/uploads/2025/03/Plant-level-data-Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx"
 
 jobs:
   update-file:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download Excel files
         run: |
-          curl -L -o Global-Integrated-Power-February-2025-update-II.xlsx \
-            https://globalenergymonitor.org/wp-content/uploads/2025/02/Global-Integrated-Power-February-2025-update-II.xlsx
-          curl -L -o Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx \
-            https://globalenergymonitor.org/wp-content/uploads/2025/03/Plant-level-data-Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx
+          curl --fail -L -o Global-Integrated-Power-February-2025-update-II.xlsx \
+            "${{ github.event.inputs.power_url }}"
+          curl --fail -L -o Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx \
+            "${{ github.event.inputs.steel_url }}"
 
-      - name: Commit changes
+      - name: Validate downloads are real xlsx files
+        # .xlsx is a ZIP archive: must start with the "PK" magic bytes and be
+        # reasonably large. This blocks Cloudflare challenge pages and other
+        # HTML error bodies from ever being committed as data.
+        run: |
+          for f in Global-Integrated-Power-February-2025-update-II.xlsx \
+                   Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx; do
+            magic=$(head -c 2 "$f")
+            size=$(stat -c %s "$f")
+            if [ "$magic" != "PK" ] || [ "$size" -lt 100000 ]; then
+              echo "::error::$f is not a valid xlsx (magic='$magic', size=$size bytes)"
+              exit 1
+            fi
+            echo "$f OK ($size bytes)"
+          done
+
+      - name: Commit and push changes
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add Global-Integrated-Power-February-2025-update-II.xlsx Global-Iron-and-Steel-Tracker-March-2025-V1.xlsx
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update GEM data files"
-
-      - name: Pull remote changes and push
-        run: |
-          git pull origin main --rebase
-          git push origin main
-
+          if git diff --staged --quiet; then
+            echo "Data files unchanged; nothing to commit."
+          else
+            git commit -m "Update GEM data files"
+            git pull origin main --rebase
+            git push origin main
+          fi
